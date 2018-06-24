@@ -1,0 +1,5 @@
+/.idea*
+/apispec_clear_unusable.egg-info*
+/dist/*
+/build/lib/brunoais/apispec/ext/clear_unusable.py
+*__pycache__*
