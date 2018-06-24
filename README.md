@@ -3,72 +3,91 @@
 Plugin for apispec which helps reusing the documentation by using a decorated function stack.
 
 ## Extended Example
-With this setup::
-```
+With this setup:
+```python
+from apispec import APISpec
 from flask import Flask
-from apispec.ext.decorated_crawler import docd_wraps
+from marshmallow import Schema, fields
+
+from brunoais.apispec.ext.decorated_crawler import docd_wraps
 
 app = Flask(__name__)
 
+# Create an APISpec
+spec = APISpec(
+    title='A safe Random swagger Petstore',
+    version='1.0.0',
+    plugins=[
+        'apispec.ext.flask',
+        'apispec.ext.marshmallow',
+        'brunoais.apispec.ext.decorated_crawler',
+    ],
+)
+
 
 def decorates(func):
-@docd_wraps(func)
-def calling(*args, **kwargs):
-    '''
-    ---
-    get:
-        consumes:
-          - application/xml+dec1
-        security:
-            - AlmostBasicAuth: []
-              BasicAuth: []
-            - ApiKeyAuth: []
-        tags:
-            - down1
-            - up1
-        responses:
-            400:
-                description: he may fail {f[x-400-suffix]}
-                schema: PetSchema
-    _:
-        responses:
-            400:
-                description: Global fail
-                schema: PetSchema
-    '''
-    return func(*args, **kwargs)
+    @docd_wraps(func)
+    def calling(*args, **kwargs):
+        """
+            ---
+            get:
+                consumes:
+                  - application/xml+dec1
+                security:
+                    - AlmostBasicAuth: []
+                      BasicAuth: []
+                    - ApiKeyAuth: []
+                tags:
+                    - down1
+                    - up1
+                responses:
+                    400:
+                        description: he may fail {f[x-400-suffix]}
+                        schema: PetSchema
+            _:
+                responses:
+                    400:
+                        description: Global fail
+                        schema: PetSchema
+        """
+        return func(*args, **kwargs)
 
-return calling
+    return calling
+
 
 def decorates2(func):
-@docd_wraps(func)
-def calling(*args, **kwargs):
-    '''
-    ---
-    get:
-        tags:
-            - get2
-            - up1
-        security:
-            - OAuth2: [scope1, scope2]
-        responses:
-            402:
-                description: mefail
-                schema: PetSchema
-    '''
-    return func(*args, **kwargs)
+    @docd_wraps(func)
+    def calling(*args, **kwargs):
+        """
+        ---
+        get:
+            tags:
+                - get2
+                - up1
+            security:
+                - OAuth2: [scope1, scope2]
+            responses:
+                402:
+                    description: mefail
+                    schema: PetSchema
+        """
 
-return calling
+        return func(*args, **kwargs)
+
+    return calling
+
 
 ```
-Passing a view function::
-```
+Passing a view function:
+```python
 
 @app.route('/random/<kind>')
 @decorates
 @decorates2
 def random_pet(kind):
-    '''A cute furry animal endpoint.
+    """
+
+    A cute furry animal endpoint.
     ---
 
     post:
@@ -99,7 +118,7 @@ def random_pet(kind):
                 schema: PetSchema
             400:
                 x-400-suffix: yeah yeah....
-    '''
+    """
     pet = {
         "category": [{
             "id": 1,
@@ -109,14 +128,27 @@ def random_pet(kind):
     }
     return jsonify(PetSchema().dump(pet).data)
 
+# Optional marshmallow support
+class CategorySchema(Schema):
+    id = fields.Int()
+    name = fields.Str(required=True)
+
+class PetSchema(Schema):
+    category = fields.Nested(CategorySchema, many=True)
+    name = fields.Str()
+
+spec.definition('Category', schema=CategorySchema)
+spec.definition('Pet', schema=PetSchema)
 
 with app.test_request_context():
-    spec.add_path(view=gist_detail)
-
+    spec.add_path(view=random_pet)
 
 ```
 The result becomes
+```python
+print(spec.to_yaml())
 ```
+```yaml
 definitions:
 # ...
 info: {title: A safe Random swagger Petstore, version: 1.0.0}
@@ -168,7 +200,7 @@ also from bottom up, in a subsequent pass.
 
 ## Installation
 
-    pip install apispec-clear-unusable
+    pip install apispec-decorated-crawler
 
 ## License
 
