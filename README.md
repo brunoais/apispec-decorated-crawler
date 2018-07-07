@@ -1,4 +1,4 @@
-# apispec-clear-unusable
+# apispec-decorated-crawler
 
 Plugin for apispec which helps reusing the documentation by using a decorated function stack.
 
