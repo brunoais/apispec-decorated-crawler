@@ -1,14 +1,15 @@
-from brunoais.apispec.ext.decorated_crawler import docd_wraps
+from apispec import APISpec
+from apispec.ext.marshmallow import MarshmallowPlugin
+from apispec_webframeworks.flask import FlaskPlugin
 from flask import Flask
 from marshmallow import Schema, fields
-from apispec import APISpec
+
+from brunoais.apispec.ext.decorated_crawler import DecoratedCrawler, docd_wraps
 
 """
     This example demonstrates decorated functions that use Marshmallow schemas to serialize their responses.
-    The schemas should be included in the resulting schema and refereced from the endpoints.
+    The schemas should be included in the resulting schema and referenced from the endpoints.
 """
-from flask import Flask
-
 app = Flask(__name__)
 
 # Create an APISpec
@@ -17,9 +18,11 @@ spec = APISpec(
     version='1.0.0',
     openapi_version='2.0',
     plugins=[
-        'apispec.ext.flask',
-        'apispec.ext.marshmallow',
-        'brunoais.apispec.ext.decorated_crawler',
+        # Note that Decorated crawler has to be placed before MarshmallowPlugin for resolution
+        # of schema references in decorator comments to work
+        DecoratedCrawler(),
+        FlaskPlugin(),
+        MarshmallowPlugin(),
     ],
 )
 
@@ -75,6 +78,7 @@ def decorates2(func):
 
     return calling
 
+
 @app.route('/random/<kind>')
 @decorates
 @decorates2
@@ -86,6 +90,12 @@ def random_pet(kind):
 
     post:
         description: POST a pet
+        parameters:
+            - in: path
+              name: kind
+              required: true
+              type: string
+              description: Path Parameter description in Markdown.
     get:
         description: Get a pet
         security:
@@ -113,31 +123,27 @@ def random_pet(kind):
             400:
                 x-400-suffix: yeah yeah....
     """
-    pet = {
-        "category": [{
-            "id": 1,
-            "name": "Named"
-        }],
-        "name": "woof"
-    }
-    return jsonify(PetSchema().dump(pet).data)
+    pass
+
 
 # Optional marshmallow support
 class CategorySchema(Schema):
     id = fields.Int()
     name = fields.Str(required=True)
 
+
 class PetSchema(Schema):
     category = fields.Nested(CategorySchema, many=True)
     name = fields.Str()
 
-spec.definition('Category', schema=CategorySchema)
-spec.definition('Pet', schema=PetSchema)
+
+spec.components.schema('Category', schema=CategorySchema)
+spec.components.schema('Pet', schema=PetSchema)
 
 with app.test_request_context():
-    spec.add_path(view=random_pet)
+    spec.path(view=random_pet)
+
 
 if __name__ == "__main__":
     # This should match extended_example_with_marshmallow_output.yaml
     print(spec.to_yaml())
-
