@@ -7,10 +7,10 @@ endif
 package:
 	python setup.py sdist bdist_wheel
 
-test-deploy:
+test-deploy: package
 	twine upload --repository-url https://test.pypi.org/legacy/ dist/*
 
-deploy:
+deploy: package
 ifeq ($(OS), "WIN")
 	set /p  ans="This is the real deploy. Are you sure? "
 else
