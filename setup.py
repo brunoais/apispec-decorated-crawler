@@ -4,7 +4,7 @@ with open("README.md", "r", encoding='UTF-8') as fh:
     long_description = fh.read()
 
 setup(name='apispec-decorated-crawler',
-        version='1.0.1',
+        version='2.0.0',
         license='MIT',
         description='Plugin for apispec which helps reusing the documentation by using a decorated function stack.',
         long_description=long_description,
@@ -17,6 +17,7 @@ setup(name='apispec-decorated-crawler',
         classifiers=(
             "Programming Language :: Python :: 3",
             "Programming Language :: Python :: 3.6",
+            "Programming Language :: Python :: 3.7",
             "License :: OSI Approved :: MIT License",
             "Operating System :: OS Independent",
         ),

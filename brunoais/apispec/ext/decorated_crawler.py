@@ -207,9 +207,9 @@ from __future__ import absolute_import
 import itertools
 import re
 
+from apispec import BasePlugin
 from apispec.compat import iteritems
-from apispec import Path
-from apispec import utils
+from apispec import yaml_utils
 
 from contextlib import contextmanager
 from collections import Mapping, OrderedDict
@@ -273,89 +273,90 @@ def temp_dict_missing(dict_wrapper):
     return call
 
 
-def operations_merging(spec, path, operations, view, **kwargs):
-    """operations helper that allows passing an annotated function."""
+class DecoratedCrawler(BasePlugin):
 
-    dict_of_missing = temp_dict_missing(DictDefaultWrap())
+    def operation_helper(spec, path, operations, **kwargs):
+        """operations helper that allows passing an annotated function."""
 
-    hierarchy_docs = []
-    hierarchy_func = view
-    while hierarchy_func:
-        doc = getattr(hierarchy_func, '__orig_doc__', None)
-        if doc:
-            doc_yaml = utils.load_yaml_from_docstring(doc)
-            if doc_yaml:
-                hierarchy_docs.append(doc_yaml)
-        hierarchy_func = getattr(hierarchy_func, '__wrapped__', None)
+        view = kwargs.pop('view')
+
+        dict_of_missing = temp_dict_missing(DictDefaultWrap())
+
+        hierarchy_docs = []
+        hierarchy_func = view
+        while hierarchy_func:
+            doc = getattr(hierarchy_func, '__orig_doc__', None)
+            if doc:
+                doc_yaml = yaml_utils.load_yaml_from_docstring(doc)
+                if doc_yaml:
+                    hierarchy_docs.append(doc_yaml)
+            hierarchy_func = getattr(hierarchy_func, '__wrapped__', None)
 
 
-    def parameters_merging(o_parameters, d_parameters, yaml_doc):
-        o_parameter_ids = {}
-        for parameter in o_parameters:
+        def parameters_merging(o_parameters, d_parameters, yaml_doc):
+            o_parameter_ids = {}
+            for parameter in o_parameters:
+                try:
+                    o_parameter_ids[(parameter['in'], parameter['name'])] = parameter
+                except KeyError as e:
+                    raise IncompleteParameterSetting(
+                        "While solving parameter {}, with yaml document {}, related to view with doc {},"
+                        "the parameter attribute '{}' was missing".format(parameter, yaml_doc, view, e.args[0]))
+
+            for parameter in d_parameters['parameters']:
+                try:
+                    param_in = parameter['in']
+                    param_name = parameter['name']
+                except KeyError as e:
+                    raise IncompleteParameterSetting(
+                        "While solving parameter {}, with yaml document {}, related to view with doc {},"
+                        "the parameter attribute '{}' was missing".format(parameter, yaml_doc, view, e.args[0]))
+
+                o_parameter = o_parameter_ids.pop((param_in, param_name), None)
+                if not o_parameter:
+                    o_parameter = {}
+                    o_parameters.append(o_parameter)
+
+        def merge_with_default(original, defaults, yaml_doc=None):
+            for operation_name, d_operation_content in defaults.items():
+                o_operation_content = original.setdefault(operation_name, d_operation_content)
+                if o_operation_content is d_operation_content:
+                    if isinstance(o_operation_content, str):
+                        # This allows making placeholders for the string that were never set and not raising as a result.
+                        with dict_of_missing(original) as defaulted_dict:
+                            original[operation_name] = o_operation_content.format(f=defaulted_dict)
+                    continue
+                if isinstance(o_operation_content, dict):
+                    merge_with_default(o_operation_content, d_operation_content, yaml_doc)
+                elif isinstance(o_operation_content, list):
+                    if operation_name == "parameters":
+                        parameters_merging(o_operation_content, d_operation_content, yaml_doc)
+                    elif operation_name == 'security':
+                        o_security_methods = {tuple(security_rule.keys()) for security_rule in o_operation_content}
+                        new_auth_methods = [security_rule for security_rule in d_operation_content
+                                           if tuple(security_rule.keys()) not in o_security_methods]
+                        o_operation_content.extend(new_auth_methods)
+
+                        pass
+                    elif operation_name in ('produces', 'consumes', 'tags'):
+                        o_operation_content[:] = list(OrderedDict.fromkeys(
+                                itertools.chain(o_operation_content, d_operation_content)).keys())
+
+        fallover_defaults = []
+        for hierarchy_doc in hierarchy_docs:
             try:
-                o_parameter_ids[(parameter['in'], parameter['name'])] = parameter
-            except KeyError as e:
-                raise IncompleteParameterSetting(
-                    "While solving parameter {}, with yaml document {}, related to view with doc {},"
-                    "the parameter attribute '{}' was missing".format(parameter, yaml_doc, view, e.args[0]))
+                fallover_defaults.append(hierarchy_doc.pop('_'))
+            except KeyError:
+                pass
+            merge_with_default(operations, hierarchy_doc, view.__doc__)
+        if fallover_defaults:
+            underscore_default = fallover_defaults.pop(0)
+            # Algorithmically, it is faster O(_n) if I merge all operations for all methods first than if I
+            # run the same defaults sequence for all methods
+            for default in fallover_defaults:
+                merge_with_default(underscore_default, default, view.__doc__)
+            for method, method_operations in operations.items():
+                merge_with_default(method_operations, underscore_default, view.__doc__)
 
-        for parameter in d_parameters['parameters']:
-            try:
-                param_in = parameter['in']
-                param_name = parameter['name']
-            except KeyError as e:
-                raise IncompleteParameterSetting(
-                    "While solving parameter {}, with yaml document {}, related to view with doc {},"
-                    "the parameter attribute '{}' was missing".format(parameter, yaml_doc, view, e.args[0]))
+        return path
 
-            o_parameter = o_parameter_ids.pop((param_in, param_name), None)
-            if not o_parameter:
-                o_parameter = {}
-                o_parameters.append(o_parameter)
-
-    def merge_with_default(original, defaults, yaml_doc=None):
-        for operation_name, d_operation_content in defaults.items():
-            o_operation_content = original.setdefault(operation_name, d_operation_content)
-            if o_operation_content is d_operation_content:
-                if isinstance(o_operation_content, str):
-                    # This allows making placeholders for the string that were never set and not raising as a result.
-                    with dict_of_missing(original) as defaulted_dict:
-                        original[operation_name] = o_operation_content.format(f=defaulted_dict)
-                continue
-            if isinstance(o_operation_content, dict):
-                merge_with_default(o_operation_content, d_operation_content, yaml_doc)
-            elif isinstance(o_operation_content, list):
-                if operation_name == "parameters":
-                    parameters_merging(o_operation_content, d_operation_content, yaml_doc)
-                elif operation_name == 'security':
-                    o_security_methods = {tuple(security_rule.keys()) for security_rule in o_operation_content}
-                    new_auth_methods = [security_rule for security_rule in d_operation_content
-                                       if tuple(security_rule.keys()) not in o_security_methods]
-                    o_operation_content.extend(new_auth_methods)
-
-                    pass
-                elif operation_name in ('produces', 'consumes', 'tags'):
-                    o_operation_content[:] = list(OrderedDict.fromkeys(
-                            itertools.chain(o_operation_content, d_operation_content)).keys())
-
-    fallover_defaults = []
-    for hierarchy_doc in hierarchy_docs:
-        try:
-            fallover_defaults.append(hierarchy_doc.pop('_'))
-        except KeyError:
-            pass
-        merge_with_default(path.operations, hierarchy_doc, view.__doc__)
-    if fallover_defaults:
-        underscore_default = fallover_defaults.pop(0)
-        # Algorithmically, it is faster O(_n) if I merge all operations for all methods first than if I
-        # run the same defaults sequence for all methods
-        for default in fallover_defaults:
-            merge_with_default(underscore_default, default, view.__doc__)
-        for method, method_operations in path.operations.items():
-            merge_with_default(method_operations, underscore_default, view.__doc__)
-
-    return path
-
-def setup(spec):
-    """Setup for the plugin."""
-    spec.register_operation_helper(operations_merging)
