@@ -7,7 +7,8 @@ from openapi_spec_validator import validate_v2_spec_url
 
 # TODO: Auto-discover the example names
 EXAMPLES = [
-    ["extended_example_with_marshmallow"]
+    ["basic_example"],
+    ["extended_example_with_marshmallow"],
 ]
 
 
