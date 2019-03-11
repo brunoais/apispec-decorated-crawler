@@ -1,0 +1,57 @@
+definitions:
+  Category:
+    properties:
+      id: {format: int32, type: integer}
+      name: {type: string}
+    required: [name]
+    type: object
+  Pet:
+    properties:
+      name: {type: string}
+      category: 
+        items: {$ref: '#/definitions/Category'}
+        type: array
+    type: object
+info: {title: A safe Random swagger Petstore, version: 1.0.0}
+parameters: {}
+paths:
+  /random/{kind}:
+    post:
+      description: POST a pet
+      parameters:
+      - {description: Path Parameter description in Markdown., in: path, name: kind,
+        required: true, type: string}
+      responses:
+        400:
+          description: Global fail
+          schema: {$ref: '#/definitions/Pet'}
+    get:
+      consumes: [application/json, application/xml, application/xml+dec1]
+      description: Get a pet
+      parameters:
+      - {description: Path Parameter description in Markdown., in: path, name: kind,
+        required: true, type: string}
+      - {description: Query Parameter description in Markdown., in: query, name: offset,
+        type: string}
+      produces: [application/json, application/xml]
+      responses:
+        200:
+          description: A pet to be returned
+          schema: {$ref: '#/definitions/Pet'}
+        400: 
+          description: he may fail yeah yeah.... 
+          schema: {$ref: '#/definitions/Pet'}
+          x-400-suffix: yeah yeah....
+        402: 
+          description: mefail
+          schema: {$ref: '#/definitions/Pet'}
+      security:
+      - ApiKeyAuth: []
+      - AlmostBasicAuth: []
+        BasicAuth: []
+      - OAuth2: [scope1, scope2]
+      tags: [down1, up1, get2]
+responses: {}
+securityDefinitions: {}
+swagger: '2.0'
+tags: []
